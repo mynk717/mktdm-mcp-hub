@@ -2,8 +2,8 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/research/:match*",
-      "destination": "/packages/research-discovery/index.js"
+      "source": "/research/(.*)",
+      "destination": "/api/research"
     }
   ]
 }
