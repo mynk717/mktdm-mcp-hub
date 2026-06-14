@@ -171,6 +171,10 @@ app.post("/messages", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`MCP Server running at http://localhost:${PORT}/sse`);
-});
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.error(`MCP Server running at http://localhost:${PORT}/sse`);
+  });
+}
+
+export default app;

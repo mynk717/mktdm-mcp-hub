@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/research/:match*",
+      "destination": "/packages/research-discovery/index.js"
+    }
+  ],
+  "functions": {
+    "packages/research-discovery/index.js": {
+      "runtime": "vercel-node@latest",
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  }
+}
