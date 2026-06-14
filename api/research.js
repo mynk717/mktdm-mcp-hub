@@ -1,29 +1,17 @@
-#!/usr/bin/env node
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "crypto";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import express from "express";
-import cors from "cors";
 import fs from "fs/promises";
 import path from "path";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Templates.md");
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Store transports by session ID
-const transports = {};
 
 // Helper function to create and configure a new server instance
 const createServer = () => {
@@ -97,91 +85,19 @@ const createServer = () => {
   return server;
 };
 
-// POST endpoint for MCP requests
-app.post("/research", async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'];
+// Vercel serverless function handler
+export default async function handler(req) {
+  // Create a fresh transport and server per request (stateless mode)
+  const transport = new WebStandardStreamableHTTPServerTransport();
+  const server = createServer();
 
-  try {
-    let transport;
+  await server.connect(transport);
 
-    if (sessionId && transports[sessionId]) {
-      // Reuse existing transport
-      transport = transports[sessionId];
-    } else if (!sessionId || req.body?.method === "initialize") {
-      // New initialization request
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (newSessionId) => {
-          console.log(`Session initialized: ${newSessionId}`);
-          transports[newSessionId] = transport;
-        }
-      });
-
-      // Clean up on close
-      transport.onclose = () => {
-        const sid = transport.sessionId;
-        if (sid && transports[sid]) {
-          console.log(`Session closed: ${sid}`);
-          delete transports[sid];
-        }
-      };
-
-      // Connect server to transport
-      const server = createServer();
-      await server.connect(transport);
-    } else {
-      // Invalid request
-      res.status(400).json({
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Bad Request: Invalid session" },
-        id: null
-      });
-      return;
-    }
-
-    // Handle the request
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error("Error handling MCP request:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: null
-      });
-    }
-  }
-});
-
-// GET endpoint for SSE streams
-app.get("/research", async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'];
-
-  if (!sessionId || !transports[sessionId]) {
-    res.status(400).send("Invalid or missing session ID");
-    return;
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
-
-// DELETE endpoint for session termination
-app.delete("/research", async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'];
-
-  if (!sessionId || !transports[sessionId]) {
-    res.status(400).send("Invalid or missing session ID");
-    return;
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
-
-const PORT = process.env.PORT || 3000;
-if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, () => console.error(`Running on http://localhost:${PORT}/research`));
+  // Use the Web Standard Request API directly
+  return transport.handleRequest(req);
 }
 
-export default app;
+// For local development
+export const config = {
+  runtime: 'nodejs',
+};
