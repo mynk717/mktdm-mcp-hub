@@ -87,14 +87,29 @@ const createServer = () => {
 
 // Vercel serverless function handler
 export default async function handler(req) {
-  // Create a fresh transport and server per request (stateless mode)
-  const transport = new WebStandardStreamableHTTPServerTransport();
-  const server = createServer();
+  try {
+    // Create a fresh transport and server per request (stateless mode)
+    const transport = new WebStandardStreamableHTTPServerTransport();
+    const server = createServer();
 
-  await server.connect(transport);
+    await server.connect(transport);
 
-  // Use the Web Standard Request API directly
-  return transport.handleRequest(req);
+    // Use the Web Standard Request API directly
+    return await transport.handleRequest(req);
+  } catch (error) {
+    console.error("MCP Handler Error:", error);
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: error.message },
+        id: null
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  }
 }
 
 // For local development
