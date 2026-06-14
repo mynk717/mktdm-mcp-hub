@@ -156,7 +156,7 @@ app.use(cors());
 
 let transport;
 
-app.get("/research/sse", async (req, res) => {
+app.get("/research", async (req, res) => {
   console.log("New SSE connection");
   transport = new SSEServerTransport("/research/messages", res);
   await server.connect(transport);
