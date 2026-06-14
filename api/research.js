@@ -9,6 +9,7 @@ const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Template
 
 const handler = createMcpHandler(
   (server) => {
+    // --- Tools ---
     server.registerTool(
       "scrape_competitor_page",
       {
@@ -39,9 +40,9 @@ const handler = createMcpHandler(
         title: "Get Scoped Keyword Insights",
         description: "Fetch keyword metrics (local vs broad).",
         inputSchema: {
-          keyword: z.string(),
-          scope: z.enum(["local", "broad"]),
-          location: z.string().optional(),
+          keyword: z.string().describe("The keyword to analyze"),
+          scope: z.enum(["local", "broad"]).describe("Target scope"),
+          location: z.string().optional().describe("Location for local scope"),
         },
       },
       async ({ keyword, scope, location }) => {
@@ -52,50 +53,59 @@ const handler = createMcpHandler(
         };
       }
     );
+
+    // --- Resources ---
+    server.registerResource(
+      "mktdm-templates",
+      "mktg-dime://templates",
+      {
+        title: "MKTDM Content Templates",
+        description: "Official content strategy and intent mapping templates.",
+        mimeType: "text/markdown",
+      },
+      async (uri) => {
+        const content = await fs.readFile(TEMPLATE_PATH, "utf-8");
+        return {
+          contents: [{
+            uri: uri.href,
+            text: content,
+            mimeType: "text/markdown",
+          }],
+        };
+      }
+    );
   },
-  {},
+  {
+    name: "mktdm-research",
+    version: "1.0.0",
+  },
   {
     basePath: "/research",
+    maxDuration: 60,
   }
 );
 
+// Vercel Request/Response Adapter
 export default async function (req, res) {
-  // Manual logging for debug
-  console.log(`Method: ${req.method}, URL: ${req.url}`);
-  
-  // Vercel rewrites often mess with req.url. 
-  // Let's ensure the URL passed to mcp-handler has the /research prefix and the transport
-  const protocol = req.headers["x-forwarded-proto"] || "http";
-  const host = req.headers.host;
-  
-  // Extract original path from headers if available, or use the URL
-  // req.url on Vercel is often just the part AFTER /api/
-  const originalUrl = new URL(req.url, `${protocol}://${host}`);
-  
-  // If we are at /api/research, and it was rewrote from /research/mcp, 
-  // we might need to reconstruct the path for mcp-handler
-  if (!originalUrl.pathname.startsWith("/research")) {
-      // Find the transport from the path or query
-      const pathParts = req.url.split('/').filter(Boolean);
-      // If req.url is /research/mcp, parts are [research, mcp]
-      // If req.url is /api/research, and it's a rewrite from /research/mcp
-      // Vercel might pass the original path in some header?
-      // Let's check req.headers['x-matched-path'] or similar
-      const matchedPath = req.headers['x-matched-path'] || "";
-      console.log(`Matched Path: ${matchedPath}`);
+  try {
+    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const host = req.headers.host;
+    
+    // Construct the full URL for mcp-handler's transport detection
+    // Claude/Clients will hit /research/mcp
+    const webReq = new Request(`${protocol}://${host}${req.url}`, {
+      method: req.method,
+      headers: new Headers(req.headers),
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : null,
+    });
+
+    const webRes = await handler(webReq);
+    
+    res.status(webRes.status);
+    webRes.headers.forEach((v, k) => res.setHeader(k, v));
+    res.send(await webRes.text());
+  } catch (error) {
+    console.error("MCP Adapter Error:", error);
+    res.status(500).json({ error: error.message });
   }
-
-  // Construct a Web Standard Request
-  // We'll trust mcp-handler to handle it if we provide the right URL
-  const webReq = new Request(`${protocol}://${host}${req.url}`, {
-    method: req.method,
-    headers: new Headers(req.headers),
-    body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : null,
-  });
-
-  const webRes = await handler(webReq);
-  
-  res.status(webRes.status);
-  webRes.headers.forEach((v, k) => res.setHeader(k, v));
-  res.send(await webRes.text());
 }
