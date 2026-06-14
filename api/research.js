@@ -98,7 +98,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "scrape_competitor_page") {
     try {
-      const { url } = args as any;
+      const { url } = args;
       const response = await axios.get(url, {
         headers: { "User-Agent": "Mozilla/5.0 (compatible; MKTDM-Bot/1.0)" }
       });
@@ -124,13 +124,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }, null, 2),
         }],
       };
-    } catch (e: any) {
+    } catch (e) {
       return { content: [{ type: "text", text: `Error: ${e.message}` }] };
     }
   }
 
   if (name === "get_scoped_keyword_insights") {
-    const { keyword, scope, location } = args as any;
+    const { keyword, scope, location } = args;
     
     // Logic for placeholder metrics
     const volumeBase = scope === "local" ? 500 : 15000;
