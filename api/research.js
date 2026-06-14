@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { randomUUID } from "crypto";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import express from "express";
@@ -21,11 +22,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// For Serverless environments, we must maintain the transport mapping
-// but ensure the server instance is fresh per connection.
-const activeSessions = new Map();
+// Store transports by session ID
+const transports = {};
 
-app.get("/research", async (req, res) => {
+// Helper function to create and configure a new server instance
+const createServer = () => {
   const server = new Server(
     { name: "research-discovery-mcp", version: "1.0.0" },
     { capabilities: { tools: {}, resources: {} } }
@@ -93,29 +94,89 @@ app.get("/research", async (req, res) => {
     throw new Error("Tool not found");
   });
 
-  const transport = new SSEServerTransport("/research/messages", res);
-  
-  // Connect and store the transport by its internal sessionId
-  await server.connect(transport);
-  
-  if (transport.sessionId) {
-    activeSessions.set(transport.sessionId, transport);
-  }
+  return server;
+};
 
-  req.on("close", () => {
-    if (transport.sessionId) activeSessions.delete(transport.sessionId);
-    server.close();
-  });
+// POST endpoint for MCP requests
+app.post("/research", async (req, res) => {
+  const sessionId = req.headers['mcp-session-id'];
+
+  try {
+    let transport;
+
+    if (sessionId && transports[sessionId]) {
+      // Reuse existing transport
+      transport = transports[sessionId];
+    } else if (!sessionId || req.body?.method === "initialize") {
+      // New initialization request
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (newSessionId) => {
+          console.log(`Session initialized: ${newSessionId}`);
+          transports[newSessionId] = transport;
+        }
+      });
+
+      // Clean up on close
+      transport.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid && transports[sid]) {
+          console.log(`Session closed: ${sid}`);
+          delete transports[sid];
+        }
+      };
+
+      // Connect server to transport
+      const server = createServer();
+      await server.connect(transport);
+    } else {
+      // Invalid request
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: Invalid session" },
+        id: null
+      });
+      return;
+    }
+
+    // Handle the request
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("Error handling MCP request:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: null
+      });
+    }
+  }
 });
 
-app.post("/research/messages", async (req, res) => {
-  const sessionId = req.query.sessionId;
-  const transport = activeSessions.get(sessionId);
-  if (transport) {
-    await transport.handlePostMessage(req, res);
-  } else {
-    res.status(400).send("Session not found");
+// GET endpoint for SSE streams
+app.get("/research", async (req, res) => {
+  const sessionId = req.headers['mcp-session-id'];
+
+  if (!sessionId || !transports[sessionId]) {
+    res.status(400).send("Invalid or missing session ID");
+    return;
   }
+
+  const transport = transports[sessionId];
+  await transport.handleRequest(req, res);
+});
+
+// DELETE endpoint for session termination
+app.delete("/research", async (req, res) => {
+  const sessionId = req.headers['mcp-session-id'];
+
+  if (!sessionId || !transports[sessionId]) {
+    res.status(400).send("Invalid or missing session ID");
+    return;
+  }
+
+  const transport = transports[sessionId];
+  await transport.handleRequest(req, res);
 });
 
 const PORT = process.env.PORT || 3000;

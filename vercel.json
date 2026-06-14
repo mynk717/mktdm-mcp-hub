@@ -4,10 +4,6 @@
     {
       "source": "/research",
       "destination": "/api/research"
-    },
-    {
-      "source": "/research/(.*)",
-      "destination": "/api/research"
     }
   ]
 }
