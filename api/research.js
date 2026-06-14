@@ -156,13 +156,13 @@ app.use(cors());
 
 let transport;
 
-app.get("/sse", async (req, res) => {
+app.get("/research/sse", async (req, res) => {
   console.log("New SSE connection");
-  transport = new SSEServerTransport("/messages", res);
+  transport = new SSEServerTransport("/research/messages", res);
   await server.connect(transport);
 });
 
-app.post("/messages", async (req, res) => {
+app.post("/research/messages", async (req, res) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
