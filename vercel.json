@@ -2,8 +2,12 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/research/:transport",
+      "source": "/research/:transport*",
       "destination": "/api/research"
+    },
+    {
+      "source": "/content/:transport*",
+      "destination": "/api/content"
     }
   ]
 }
