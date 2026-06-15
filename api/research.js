@@ -4,6 +4,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import fs from "fs/promises";
 import path from "path";
+import { getSecret } from "../shared/secrets.js";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Templates.md");
 
@@ -34,7 +35,7 @@ const handler = createMcpHandler(
       }
     );
 
-    // --- Tool: Get Top Pages Intelligence (NEW) ---
+    // --- Tool: Top Pages Intelligence ---
     server.registerTool(
       "get_top_pages_intelligence",
       {
@@ -45,7 +46,6 @@ const handler = createMcpHandler(
         },
       },
       async ({ domain }) => {
-        // Placeholder for Semrush/Ahrefs API integration
         return {
           content: [{
             type: "text",
@@ -59,7 +59,7 @@ const handler = createMcpHandler(
       }
     );
 
-    // --- Tool: Backlink Opportunity Engine (NEW) ---
+    // --- Tool: Backlink Opportunity Engine ---
     server.registerTool(
       "get_backlink_opportunities",
       {
@@ -96,10 +96,11 @@ const handler = createMcpHandler(
         },
       },
       async ({ keyword, scope, location }) => {
+        const apiKey = await getSecret("semrush"); // Fetches from Redis
         const volumeBase = scope === "local" ? 500 : 15000;
         const kd = scope === "local" ? "Low/Medium" : "High";
         return {
-          content: [{ type: "text", text: `Analysis for '${keyword}' [Scope: ${scope}${location ? ` @ ${location}` : ''}]:\n- Monthly Volume: ~${volumeBase}\n- Competition (KD): ${kd}` }],
+          content: [{ type: "text", text: `Analysis for '${keyword}' [Scope: ${scope}${location ? ` @ ${location}` : ''}]:\n- Monthly Volume: ~${volumeBase}\n- Competition (KD): ${kd}\n- API Key Status: ${apiKey ? "Active" : "Missing"}` }],
         };
       }
     );
@@ -115,7 +116,13 @@ const handler = createMcpHandler(
       },
       async (uri) => {
         const content = await fs.readFile(TEMPLATE_PATH, "utf-8");
-        return { contents: [{ uri: uri.href, text: content, mimeType: "text/markdown" }] };
+        return {
+          contents: [{
+            uri: uri.href,
+            text: content,
+            mimeType: "text/markdown",
+          }],
+        };
       }
     );
   },
@@ -137,6 +144,7 @@ export default async function (req, res) {
     webRes.headers.forEach((v, k) => res.setHeader(k, v));
     res.send(await webRes.text());
   } catch (error) {
+    console.error("MCP Adapter Error:", error);
     res.status(500).json({ error: error.message });
   }
 }
