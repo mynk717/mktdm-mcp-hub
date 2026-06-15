@@ -7,8 +7,7 @@ const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Template
 
 const handler = createMcpHandler(
   (server) => {
-    // --- Tools ---
-
+    // --- Tool: Format for CMS ---
     server.registerTool(
       "format_content_for_cms",
       {
@@ -22,19 +21,43 @@ const handler = createMcpHandler(
         },
       },
       async ({ title, body, platform, includeCTA }) => {
-        // Logic to wrap content in specific platform tags
         const cta = includeCTA ? "\n\n---\n**CTA:** Contact Marketing Dime at 07225991909 for a free AI audit." : "";
         const html = `<h1>${title}</h1>\n<div>${body}</div>${cta}`;
+        return { content: [{ type: "text", text: `Formatted for ${platform}:\n\n${html}` }] };
+      }
+    );
+
+    // --- Tool: Programmatic SEO Architect (NEW) ---
+    server.registerTool(
+      "generate_programmatic_pages",
+      {
+        title: "Programmatic SEO Architect",
+        description: "Generates multiple location-based or category-based landing page architectures.",
+        inputSchema: {
+          baseService: z.string().describe("e.g., AI Marketing Agency"),
+          locations: z.array(z.string()).describe("List of cities or neighborhoods"),
+          niche: z.string().optional().describe("Industry focus"),
+        },
+      },
+      async ({ baseService, locations, niche }) => {
+        const pages = locations.map(loc => ({
+          location: loc,
+          title: `${baseService} in ${loc} ${niche ? `for ${niche}` : ""}`,
+          slug: `/${loc.toLowerCase().replace(/\s+/g, '-')}-${baseService.toLowerCase().replace(/\s+/g, '-')}`,
+          targetKeywords: [`${baseService} ${loc}`, `best ${baseService} near ${loc}`, `agency in ${loc}`],
+          schemaType: "LocalBusiness"
+        }));
         
         return {
           content: [{
             type: "text",
-            text: `Formatted for ${platform}:\n\n${html}`,
+            text: `Programmatic SEO Architecture Generated for ${pages.length} pages:\n\n` + JSON.stringify(pages, null, 2),
           }],
         };
       }
     );
 
+    // --- Tool: Generate Local Schema ---
     server.registerTool(
       "generate_local_schema",
       {
@@ -58,12 +81,7 @@ const handler = createMcpHandler(
             "addressCountry": "IN"
           }
         };
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify(schema, null, 2),
-          }],
-        };
+        return { content: [{ type: "text", text: JSON.stringify(schema, null, 2) }] };
       }
     );
 
@@ -78,24 +96,12 @@ const handler = createMcpHandler(
       },
       async (uri) => {
         const content = await fs.readFile(TEMPLATE_PATH, "utf-8");
-        return {
-          contents: [{
-            uri: uri.href,
-            text: content,
-            mimeType: "text/markdown",
-          }],
-        };
+        return { contents: [{ uri: uri.href, text: content, mimeType: "text/markdown" }] };
       }
     );
   },
-  {
-    name: "mktdm-content",
-    version: "1.0.0",
-  },
-  {
-    basePath: "/content",
-    maxDuration: 60,
-  }
+  { name: "mktdm-content", version: "1.1.0" },
+  { basePath: "/content", maxDuration: 60 }
 );
 
 export default async function (req, res) {
@@ -107,7 +113,6 @@ export default async function (req, res) {
       headers: new Headers(req.headers),
       body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : null,
     });
-
     const webRes = await handler(webReq);
     res.status(webRes.status);
     webRes.headers.forEach((v, k) => res.setHeader(k, v));
