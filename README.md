@@ -6,39 +6,40 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 
 ### 1. Research & Discovery
 **Endpoint:** `https://mcp.mktgdime.com/research/mcp`
-
-**Tools:**
 - `scrape_competitor_page`: Analyzes on-page SEO and detects local vs. broad intent.
 - `get_scoped_keyword_insights`: Fetches keyword metrics (Volume/KD) with city-specific scoping.
+
+### 2. Content Execution & Publishing
+**Endpoint:** `https://mcp.mktgdime.com/content/mcp`
+- `format_content_for_cms`: Formats raw text into structured HTML/Markdown for Webflow/WordPress.
+- `generate_local_schema`: Creates JSON-LD for local business optimization.
+
+### 3. Quality Auditor (NEW)
+**Endpoint:** `https://mcp.mktgdime.com/auditor/mcp`
+- `audit_page_comprehensive`: Audits a page against 200+ SEO points, semantic intent, and MKTDM brand rules (DIPP/Udyam/Raipur).
 
 ---
 
 ## 🛠 Connection Instructions
 
 ### Claude Code (CLI)
-Run the following command to add the research tools to your Claude session:
 ```bash
 claude mcp add --transport http mktdm-research https://mcp.mktgdime.com/research/mcp
+claude mcp add --transport http mktdm-content https://mcp.mktgdime.com/content/mcp
+claude mcp add --transport http mktdm-auditor https://mcp.mktgdime.com/auditor/mcp
 ```
 
 ### Gemini CLI
-Add the server to your global configuration in `~/.gemini/settings.json`:
+Add the servers to your global configuration in `~/.gemini/settings.json`:
 ```json
 {
   "mcpServers": {
-    "mktdm-research": {
-      "url": "https://mcp.mktgdime.com/research/mcp"
-    }
+    "mktdm-research": { "url": "https://mcp.mktgdime.com/research/mcp" },
+    "mktdm-content": { "url": "https://mcp.mktgdime.com/content/mcp" },
+    "mktdm-auditor": { "url": "https://mcp.mktgdime.com/auditor/mcp" }
   }
 }
 ```
-
-### Cursor / Windsurf
-1. Open **Settings** > **MCP**.
-2. Click **Add New MCP Server**.
-3. **Name:** `mktdm-research`
-4. **Type:** `HTTP`
-5. **URL:** `https://mcp.mktgdime.com/research/mcp`
 
 ---
 
@@ -47,10 +48,5 @@ Add the server to your global configuration in `~/.gemini/settings.json`:
 - `/api`: Vercel Serverless Function entry points.
 - `/packages`: Source code for individual MCP servers.
 - `/shared`: Shared resources (Templates, Logic, Configs).
-
----
-
-## 🔒 Security & Deployment
-This hub is hosted on **Vercel** using the `mcp-handler` adapter for high-performance Streamable HTTP communication. All logic is stateless and optimized for serverless environments.
 
 Developed by **Marketing Dime**.
