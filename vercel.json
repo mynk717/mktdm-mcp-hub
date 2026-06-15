@@ -12,10 +12,6 @@
     {
       "source": "/auditor/:transport*",
       "destination": "/api/auditor"
-    },
-    {
-      "source": "/((?!api/).*)",
-      "destination": "/packages/dashboard/src/pages/index.tsx"
     }
   ]
 }
