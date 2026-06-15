@@ -12,6 +12,10 @@
     {
       "source": "/auditor/:transport*",
       "destination": "/api/auditor"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/packages/dashboard/public/$1"
     }
   ]
 }
