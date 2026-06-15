@@ -8,6 +8,10 @@
     {
       "source": "/content/:transport*",
       "destination": "/api/content"
+    },
+    {
+      "source": "/auditor/:transport*",
+      "destination": "/api/auditor"
     }
   ]
 }
