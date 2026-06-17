@@ -7,25 +7,15 @@ import path from "path";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Templates.md");
 
-const BRAND_CONFIGS = {
-  mktdm: {
-    name: "Marketing Dime",
-    identifiers: ["dipp165590", "udyam-cg-14-0074982", "keduwan nagar", "mktgdime.com"],
-    locations: ["raipur", "chhattisgarh"],
-    phones: ["07225991909"],
-    locationLabel: "Raipur",
-    targetKeywords: ["seo", "content marketing", "digital marketing", "marketing", "seo agency", "content strategy", "raipur seo"],
-    serviceKeywords: ["seo audit", "content audit", "keyword research", "backlink", "on-page seo", "technical seo"]
-  },
-  shreeshivam: {
-    name: "Shree Shivam",
-    identifiers: ["shree shivam", "shreeshivam.com"],
-    locations: ["raipur", "nagpur", "bilaspur", "durg"],
-    phones: ["07714223333"], // Added a placeholder phone for Shree Shivam
-    locationLabel: "Central India",
-    targetKeywords: ["clothing", "fashion", "wedding wear", "ethnic wear", "nagpur fashion", "raipur shopping"],
-    serviceKeywords: ["saree", "lehenga", "suit", "menswear", "kids wear"]
-  }
+// No hardcoded brands - logic is now dynamic based on input brandConfig
+const DEFAULT_BRAND_CONFIG = {
+  name: "Generic",
+  identifiers: [],
+  locations: [],
+  phones: [],
+  locationLabel: "Global",
+  targetKeywords: [],
+  serviceKeywords: []
 };
 
 // --- Helpers ---
@@ -120,19 +110,27 @@ const handler = createMcpHandler(
     server.registerTool(
       "audit_page_comprehensive",
       {
-        title: "Comprehensive SEO & Brand Audit v2.0",
-        description: "Audits a page against 200+ SEO points, brand alignment, and modern search signals.",
+        title: "Comprehensive SEO & Brand Audit v2.1",
+        description: "Audits a page against 200+ SEO points and dynamic brand-specific rules provided at runtime.",
         inputSchema: {
           url: z.string().url().describe("The URL to audit"),
-          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm").describe("The brand to audit against"),
+          brandConfig: z.object({
+            name: z.string().optional(),
+            identifiers: z.array(z.string()).optional(),
+            locations: z.array(z.string()).optional(),
+            phones: z.array(z.string()).optional(),
+            locationLabel: z.string().optional(),
+            targetKeywords: z.array(z.string()).optional(),
+            serviceKeywords: z.array(z.string()).optional(),
+          }).optional().describe("Dynamic brand rules for alignment and scoring."),
         },
       },
-      async ({ url, brand }) => {
+      async ({ url, brandConfig }) => {
         try {
-          const config = BRAND_CONFIGS[brand];
+          const config = { ...DEFAULT_BRAND_CONFIG, ...brandConfig };
           const startTime = Date.now();
           const response = await axios.get(url, { 
-            headers: { "User-Agent": "MKTDM-Auditor/2.0" }, 
+            headers: { "User-Agent": "MKTDM-Auditor/2.1" }, 
             timeout: 10000,
             validateStatus: () => true 
           });
@@ -243,13 +241,13 @@ const handler = createMcpHandler(
               type: "text",
               text: JSON.stringify({ 
                 url, 
-                brand, 
+                brandName: config.name, 
                 score, 
                 deductions,
                 summary: {
                   technical: technical.noIndex ? "CRITICAL: Noindex" : "Passed",
                   content: content.depth,
-                  local: brandAlignment.hasLocation ? "Strong" : "Weak"
+                  local: brandAlignment.hasLocation ? "Strong" : (config.locations.length === 0 ? "N/A" : "Weak")
                 },
                 audit: results 
               }, null, 2),
@@ -269,12 +267,14 @@ const handler = createMcpHandler(
         description: "Checks LCP, CLS, and Speed using PageSpeed Insights (Lightweight fallback).",
         inputSchema: {
           url: z.string().url().describe("URL to test speed"),
-          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm").describe("The brand for localized advice"),
+          brandConfig: z.object({
+            locationLabel: z.string().optional()
+          }).optional().describe("Dynamic brand rules for localized advice."),
         },
       },
-      async ({ url, brand }) => {
+      async ({ url, brandConfig }) => {
         try {
-          const config = BRAND_CONFIGS[brand];
+          const config = { ...DEFAULT_BRAND_CONFIG, ...brandConfig };
           const start = Date.now();
           const res = await axios.get(url, { timeout: 15000 });
           const ttfb = Date.now() - start;
@@ -309,12 +309,15 @@ const handler = createMcpHandler(
         description: "Deep dive into word count, readability, FAQ patterns, and E-E-A-T signals.",
         inputSchema: {
           url: z.string().url(),
-          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm"),
+          brandConfig: z.object({
+            targetKeywords: z.array(z.string()).optional(),
+            serviceKeywords: z.array(z.string()).optional()
+          }).optional(),
         },
       },
-      async ({ url, brand }) => {
+      async ({ url, brandConfig }) => {
         try {
-          const config = BRAND_CONFIGS[brand];
+          const config = { ...DEFAULT_BRAND_CONFIG, ...brandConfig };
           const response = await axios.get(url);
           const $ = cheerio.load(response.data);
           const bodyText = $("body").text();
@@ -328,8 +331,8 @@ const handler = createMcpHandler(
           };
 
           const keywords = {
-            targetDensity: config.targetKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / config.targetKeywords.length,
-            serviceDensity: config.serviceKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / config.serviceKeywords.length
+            targetDensity: config.targetKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / Math.max(1, config.targetKeywords.length),
+            serviceDensity: config.serviceKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / Math.max(1, config.serviceKeywords.length)
           };
 
           return {
@@ -361,12 +364,15 @@ const handler = createMcpHandler(
         description: "Checks NAP consistency, LocalBusiness schema, and Maps integration.",
         inputSchema: {
           url: z.string().url(),
-          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm"),
+          brandConfig: z.object({
+            phones: z.array(z.string()).optional(),
+            locations: z.array(z.string()).optional()
+          }).optional(),
         },
       },
-      async ({ url, brand }) => {
+      async ({ url, brandConfig }) => {
         try {
-          const config = BRAND_CONFIGS[brand];
+          const config = { ...DEFAULT_BRAND_CONFIG, ...brandConfig };
           const response = await axios.get(url);
           const $ = cheerio.load(response.data);
           const bodyLower = $("body").text().toLowerCase();
@@ -382,7 +388,7 @@ const handler = createMcpHandler(
           return {
             content: [{
               type: "text",
-              text: JSON.stringify({ url, brand, nap, nearMePatterns, status: nap.phoneFound && nap.locationFound ? "OPTIMIZED" : "NEEDS WORK" }, null, 2),
+              text: JSON.stringify({ url, brandName: config.name, nap, nearMePatterns, status: (config.phones.length > 0 && config.locations.length > 0) ? (nap.phoneFound && nap.locationFound ? "OPTIMIZED" : "NEEDS WORK") : "N/A" }, null, 2),
             }],
           };
         } catch (e) {
@@ -513,7 +519,7 @@ const handler = createMcpHandler(
       }
     );
   },
-  { name: "mktdm-auditor", version: "2.0.0" },
+  { name: "mktdm-auditor", version: "2.1.0" },
   { basePath: "/auditor", maxDuration: 60 }
 );
 

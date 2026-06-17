@@ -14,11 +14,38 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 - `format_content_for_cms`: Formats raw text into structured HTML/Markdown for Webflow/WordPress.
 - `generate_local_schema`: Creates JSON-LD for local business optimization.
 
-### 3. Quality Auditor (NEW)
+### 3. Quality Auditor (v2.1.0)
 **Endpoint:** `https://mcp.mktgdime.com/auditor/mcp`
-- `audit_page_comprehensive`: Audits a page against 200+ SEO points, semantic intent, and brand-specific alignment rules.
-  - **Parameters:** `url`, `brand` (optional: `mktdm` | `shreeshivam`, default: `mktdm`).
-- `audit_performance_vitals`: Checks Core Web Vitals and provides localized speed advice based on the `brand`.
+- `audit_page_comprehensive`: Audits a page against 200+ SEO points and **dynamic brand rules**.
+  - **Parameters:** `url`, `brandConfig` (optional object).
+- `audit_content_quality`: Word count, FAQ patterns, keyword density, and E-E-A-T signals.
+- `audit_local_seo`: NAP consistency, LocalBusiness schema, and Maps integration.
+- `audit_schema_structured_data`: Full JSON-LD extraction and validation.
+- `audit_social_preview`: Open Graph and Twitter Card validation.
+
+---
+
+## 📂 Dynamic Brand Configurations (Privacy-First)
+
+The Quality Auditor no longer uses hardcoded brand data. Instead, it accepts a `brandConfig` object at runtime. This allows you to keep client data (phones, keywords, private IDs) in **local files** on your machine.
+
+### How to use with AI Agents (Gemini/Claude):
+1.  **Create a local brand file** (e.g., `shree-shivam.md` or `brands.json`) on your computer.
+2.  **Tell the AI:** "Read my local `shree-shivam.md` file and use those details to audit this URL."
+3.  **AI Logic:** The AI will read your file and pass the details into the `brandConfig` parameter automatically.
+
+**`brandConfig` Structure:**
+```json
+{
+  "name": "Brand Name",
+  "identifiers": ["DIPP ID", "Domain", "Unique Marker"],
+  "locations": ["City", "State"],
+  "phones": ["07225991909"],
+  "locationLabel": "Raipur",
+  "targetKeywords": ["seo", "marketing"],
+  "serviceKeywords": ["audit", "strategy"]
+}
+```
 
 ---
 
