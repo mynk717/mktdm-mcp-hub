@@ -7,6 +7,23 @@ import path from "path";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Templates.md");
 
+const BRAND_CONFIGS = {
+  mktdm: {
+    name: "Marketing Dime",
+    identifiers: ["dipp165590", "udyam-cg-14-0074982", "keduwan nagar", "mktgdime.com"],
+    locations: ["raipur", "chhattisgarh"],
+    phones: ["07225991909"],
+    locationLabel: "Raipur"
+  },
+  shreeshivam: {
+    name: "Shree Shivam",
+    identifiers: ["shree shivam", "shreeshivam.com"],
+    locations: ["raipur", "nagpur", "bilaspur", "durg"],
+    phones: [], // Add if known
+    locationLabel: "Central India"
+  }
+};
+
 const handler = createMcpHandler(
   (server) => {
     // --- Tool: Comprehensive SEO & Brand Audit ---
@@ -14,13 +31,15 @@ const handler = createMcpHandler(
       "audit_page_comprehensive",
       {
         title: "Comprehensive SEO & Brand Audit",
-        description: "Audits a page against 200+ SEO points and MKTDM-specific brand rules.",
+        description: "Audits a page against 200+ SEO points and brand-specific rules.",
         inputSchema: {
           url: z.string().url().describe("The URL to audit"),
+          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm").describe("The brand to audit against"),
         },
       },
-      async ({ url }) => {
+      async ({ url, brand }) => {
         try {
+          const config = BRAND_CONFIGS[brand];
           const startTime = Date.now();
           const response = await axios.get(url, { headers: { "User-Agent": "MKTDM-Auditor/1.0" }, timeout: 10000 });
           const $ = cheerio.load(response.data);
@@ -28,8 +47,8 @@ const handler = createMcpHandler(
 
           // 1. Technical (Expanded)
           const technical = {
-            titleLength: $("title").text().length, // Ideal: 50-60
-            h1Count: $("h1").length, // Ideal: 1
+            titleLength: $("title").text().length,
+            h1Count: $("h1").length,
             h2Count: $("h2").length,
             metaDescription: $('meta[name="description"]').attr("content") || "Missing",
             imagesCount: $("img").length,
@@ -41,12 +60,11 @@ const handler = createMcpHandler(
             loadTimeMs: Date.now() - startTime,
           };
 
-          // 2. MKTDM Brand alignment
-          const brand = {
-            hasDippCertification: bodyText.includes("dipp165590") || bodyText.includes("startup india"),
-            hasUdyamRegistration: bodyText.includes("udyam-cg-14-0074982"),
-            hasRaipurPresence: bodyText.includes("raipur") || bodyText.includes("chhattisgarh") || bodyText.includes("keduwan nagar"),
-            hasPhoneCTA: bodyText.includes("07225991909"),
+          // 2. Brand alignment (Dynamic)
+          const brandAlignment = {
+            hasIdentifiers: config.identifiers.some(id => bodyText.includes(id)),
+            hasLocation: config.locations.some(loc => bodyText.includes(loc)),
+            hasPhone: config.phones.some(p => bodyText.includes(p.replace(/\s/g, ""))),
           };
 
           // 3. Semanticity
@@ -55,13 +73,13 @@ const handler = createMcpHandler(
             aiDensity: (bodyText.match(/ai|automation|agent/g) || []).length,
             entityScore: 0
           };
-          if (brand.hasDippCertification) semantic.entityScore += 50;
-          if (brand.hasRaipurPresence) semantic.entityScore += 50;
+          if (brandAlignment.hasIdentifiers) semantic.entityScore += 50;
+          if (brandAlignment.hasLocation) semantic.entityScore += 50;
 
           return {
             content: [{
               type: "text",
-              text: JSON.stringify({ url, score: calculateScore(technical, brand), audit: { technical, brand, semantic } }, null, 2),
+              text: JSON.stringify({ url, brand, score: calculateScore(technical, brandAlignment), audit: { technical, brandAlignment, semantic } }, null, 2),
             }],
           };
         } catch (e) {
@@ -78,12 +96,12 @@ const handler = createMcpHandler(
         description: "Checks LCP, CLS, and Speed using PageSpeed Insights (Lightweight fallback).",
         inputSchema: {
           url: z.string().url().describe("URL to test speed"),
+          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm").describe("The brand for localized advice"),
         },
       },
-      async ({ url }) => {
+      async ({ url, brand }) => {
         try {
-          // In a production app, we would call the PageSpeed Insights API here
-          // For now, we calculate a Real-Response speed and simulate Vitals
+          const config = BRAND_CONFIGS[brand];
           const start = Date.now();
           const res = await axios.get(url, { timeout: 15000 });
           const ttfb = Date.now() - start;
@@ -97,10 +115,10 @@ const handler = createMcpHandler(
                 metrics: {
                   ttfbMs: ttfb,
                   pageSizeKb: Math.round(pageSizeKb),
-                  estimatedLCP: ttfb * 1.5 + "ms", // Simplified estimation
+                  estimatedLCP: ttfb * 1.5 + "ms",
                   status: ttfb < 500 ? "FAST" : "NEEDS IMPROVEMENT"
                 },
-                advice: ttfb > 1000 ? "Critical: Reduce server response time to improve Raipur local ranking." : "Good response time."
+                advice: ttfb > 1000 ? `Critical: Reduce server response time to improve ${config.locationLabel} local ranking.` : "Good response time."
               }, null, 2),
             }],
           };
@@ -163,13 +181,13 @@ const handler = createMcpHandler(
   { basePath: "/auditor", maxDuration: 60 }
 );
 
-function calculateScore(tech, brand) {
+function calculateScore(tech, brandAlign) {
   let s = 100;
   if (tech.h1Count !== 1) s -= 10;
   if (tech.metaDescription === "Missing") s -= 15;
   if (tech.loadTimeMs > 2000) s -= 20;
-  if (!brand.hasRaipurPresence) s -= 20;
-  if (!brand.hasDippCertification) s -= 10;
+  if (!brandAlign.hasLocation) s -= 20;
+  if (!brandAlign.hasIdentifiers) s -= 10;
   return Math.max(0, s);
 }
 

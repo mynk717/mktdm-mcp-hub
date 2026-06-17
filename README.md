@@ -16,7 +16,9 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 
 ### 3. Quality Auditor (NEW)
 **Endpoint:** `https://mcp.mktgdime.com/auditor/mcp`
-- `audit_page_comprehensive`: Audits a page against 200+ SEO points, semantic intent, and MKTDM brand rules (DIPP/Udyam/Raipur).
+- `audit_page_comprehensive`: Audits a page against 200+ SEO points, semantic intent, and brand-specific alignment rules.
+  - **Parameters:** `url`, `brand` (optional: `mktdm` | `shreeshivam`, default: `mktdm`).
+- `audit_performance_vitals`: Checks Core Web Vitals and provides localized speed advice based on the `brand`.
 
 ---
 
