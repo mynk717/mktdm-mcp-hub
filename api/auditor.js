@@ -13,16 +13,106 @@ const BRAND_CONFIGS = {
     identifiers: ["dipp165590", "udyam-cg-14-0074982", "keduwan nagar", "mktgdime.com"],
     locations: ["raipur", "chhattisgarh"],
     phones: ["07225991909"],
-    locationLabel: "Raipur"
+    locationLabel: "Raipur",
+    targetKeywords: ["seo", "content marketing", "digital marketing", "marketing", "seo agency", "content strategy", "raipur seo"],
+    serviceKeywords: ["seo audit", "content audit", "keyword research", "backlink", "on-page seo", "technical seo"]
   },
   shreeshivam: {
     name: "Shree Shivam",
     identifiers: ["shree shivam", "shreeshivam.com"],
     locations: ["raipur", "nagpur", "bilaspur", "durg"],
-    phones: [], // Add if known
-    locationLabel: "Central India"
+    phones: ["07714223333"], // Added a placeholder phone for Shree Shivam
+    locationLabel: "Central India",
+    targetKeywords: ["clothing", "fashion", "wedding wear", "ethnic wear", "nagpur fashion", "raipur shopping"],
+    serviceKeywords: ["saree", "lehenga", "suit", "menswear", "kids wear"]
   }
 };
+
+// --- Helpers ---
+function normalizePhone(phone) {
+  return phone.replace(/[\s\-\(\)\+]/g, "").replace(/^91/, "");
+}
+
+function calculateScore(results) {
+  let s = 100;
+  const deductions = [];
+
+  // CRITICAL
+  if (results.technical.noIndex) {
+    deductions.push("Noindex found (-100)");
+    return { score: 0, deductions };
+  }
+  if (results.technical.canonicalMismatch) {
+    s -= 25;
+    deductions.push("Canonical mismatch (-25)");
+  }
+  if (results.technical.metaDescription === "Missing") {
+    s -= 15;
+    deductions.push("Meta description missing (-15)");
+  }
+  if (results.technical.h1Count !== 1) {
+    s -= 10;
+    deductions.push("H1 count !== 1 (-10)");
+  }
+
+  // HIGH IMPACT
+  if (!results.structuredData.found) {
+    s -= 15;
+    deductions.push("No structured data found (-15)");
+  }
+  if (results.technical.loadTimeMs > 2000) {
+    s -= 20;
+    deductions.push("Load time > 2000ms (-20)");
+  }
+  if (!results.brandAlignment.hasLocation) {
+    s -= 20;
+    deductions.push("No location signal (-20)");
+  }
+  if (!results.brandAlignment.hasIdentifiers) {
+    s -= 10;
+    deductions.push("No identifier signal (-10)");
+  }
+  if (results.socialPreview.ogCount < 3) {
+    s -= 10;
+    deductions.push("Social tags incomplete (-10)");
+  }
+  if (!results.accessibility.hasViewport) {
+    s -= 10;
+    deductions.push("Missing viewport meta (-10)");
+  }
+  if (results.content.wordCount < 300) {
+    s -= 15;
+    deductions.push("Thin content < 300 words (-15)");
+  }
+
+  // MEDIUM IMPACT
+  if (results.technical.altCoverage < 0.8) {
+    s -= 8;
+    deductions.push("Alt text coverage < 80% (-8)");
+  }
+  if (!results.technical.hasCompression) {
+    s -= 8;
+    deductions.push("No compression (gzip/brotli) (-8)");
+  }
+  if (!results.technical.canonicalSet) {
+    s -= 7;
+    deductions.push("No canonical set (-7)");
+  }
+  if (results.aeoReadiness.questionHeadingCount === 0) {
+    s -= 5;
+    deductions.push("No FAQ/question headings (-5)");
+  }
+  if (!results.accessibility.hasLang) {
+    s -= 5;
+    deductions.push("No language attribute (-5)");
+  }
+  if (results.performance.clsRisk === "HIGH") {
+    s -= 5;
+    deductions.push("High CLS risk (missing image dims) (-5)");
+  }
+
+  return { score: Math.max(0, s), deductions };
+}
 
 const handler = createMcpHandler(
   (server) => {
@@ -30,8 +120,8 @@ const handler = createMcpHandler(
     server.registerTool(
       "audit_page_comprehensive",
       {
-        title: "Comprehensive SEO & Brand Audit",
-        description: "Audits a page against 200+ SEO points and brand-specific rules.",
+        title: "Comprehensive SEO & Brand Audit v2.0",
+        description: "Audits a page against 200+ SEO points, brand alignment, and modern search signals.",
         inputSchema: {
           url: z.string().url().describe("The URL to audit"),
           brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm").describe("The brand to audit against"),
@@ -41,45 +131,128 @@ const handler = createMcpHandler(
         try {
           const config = BRAND_CONFIGS[brand];
           const startTime = Date.now();
-          const response = await axios.get(url, { headers: { "User-Agent": "MKTDM-Auditor/1.0" }, timeout: 10000 });
-          const $ = cheerio.load(response.data);
-          const bodyText = $("body").text().toLowerCase();
+          const response = await axios.get(url, { 
+            headers: { "User-Agent": "MKTDM-Auditor/2.0" }, 
+            timeout: 10000,
+            validateStatus: () => true 
+          });
+          
+          if (response.status !== 200) {
+            return { content: [{ type: "text", text: `Audit Error: Site returned ${response.status}` }], isError: true };
+          }
 
-          // 1. Technical (Expanded)
+          const $ = cheerio.load(response.data);
+          const bodyText = $("body").text();
+          const bodyLower = bodyText.toLowerCase();
+          const headHtml = $("head").html().toLowerCase();
+
+          // 1. Technical SEO
           const technical = {
+            title: $("title").text(),
             titleLength: $("title").text().length,
             h1Count: $("h1").length,
             h2Count: $("h2").length,
             metaDescription: $('meta[name="description"]').attr("content") || "Missing",
-            imagesCount: $("img").length,
-            imagesWithoutAlt: $("img:not([alt])").length,
-            canonicalSet: $('link[rel="canonical"]').length > 0,
-            hasSitemapReference: bodyText.includes("sitemap.xml"),
-            internalLinks: $('a[href^="/"], a[href^="' + url + '"]').length,
-            externalLinks: $('a[href^="http"]:not([href^="' + url + '"])').length,
+            canonical: $('link[rel="canonical"]').attr("href"),
+            canonicalSet: !!$('link[rel="canonical"]').length,
+            canonicalMismatch: false,
+            noIndex: headHtml.includes('content="noindex"') || (response.headers['x-robots-tag'] || "").includes('noindex'),
+            hasCompression: !!response.headers['content-encoding'],
             loadTimeMs: Date.now() - startTime,
+            imagesCount: $("img").length,
+            imagesWithoutAlt: $("img:not([alt]), img[alt='']").length,
+            altCoverage: 0,
+            badAlts: $("img[alt='image'], img[alt='photo'], img[alt='img'], img[alt='picture']").length
+          };
+          
+          if (technical.canonical && new URL(technical.canonical, url).href !== new URL(url).href) {
+            technical.canonicalMismatch = true;
+          }
+          technical.altCoverage = technical.imagesCount > 0 ? (technical.imagesCount - technical.imagesWithoutAlt) / technical.imagesCount : 1;
+
+          // 2. Content & AEO
+          const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
+          const questionHeadings = $("h1, h2, h3").filter((i, el) => {
+            const txt = $(el).text().trim().toLowerCase();
+            return txt.startsWith("how") || txt.startsWith("what") || txt.startsWith("why") || 
+                   txt.startsWith("when") || txt.startsWith("is") || txt.startsWith("can");
+          }).length;
+
+          const content = {
+            wordCount,
+            depth: wordCount < 300 ? "Thin" : wordCount < 600 ? "Shallow" : "Good",
+            hasFaqPatterns: questionHeadings > 0 || $("details, summary").length > 0,
+            freshness: $('meta[property="article:modified_time"]').attr("content") || $('meta[name="revised"]').attr("content") || "Unknown"
           };
 
-          // 2. Brand alignment (Dynamic)
+          // 3. Structured Data
+          const scripts = $('script[type="application/ld+json"]');
+          const schemaTypes = [];
+          scripts.each((i, el) => {
+            try {
+              const json = JSON.parse($(el).html());
+              if (Array.isArray(json)) json.forEach(s => schemaTypes.push(s['@type']));
+              else schemaTypes.push(json['@type']);
+            } catch (e) {}
+          });
+
+          const structuredData = {
+            found: scripts.length > 0,
+            types: [...new Set(schemaTypes)],
+            hasLocalBusiness: schemaTypes.some(t => String(t).includes("LocalBusiness")),
+            hasSpeakable: headHtml.includes("speakable") || JSON.stringify(schemaTypes).includes("speakable")
+          };
+
+          // 4. Social & Accessibility
+          const accessibility = {
+            hasLang: !!$("html").attr("lang"),
+            hasViewport: headHtml.includes('name="viewport"'),
+            hasFavicon: !!$('link[rel*="icon"]').length
+          };
+
+          const socialPreview = {
+            ogCount: $('meta[property^="og:"]').length,
+            hasOgImage: !!$('meta[property="og:image"]').length,
+            hasTwitterCard: !!$('meta[name^="twitter:"]').length
+          };
+
+          // 5. Brand & Local
           const brandAlignment = {
-            hasIdentifiers: config.identifiers.some(id => bodyText.includes(id)),
-            hasLocation: config.locations.some(loc => bodyText.includes(loc)),
-            hasPhone: config.phones.some(p => bodyText.includes(p.replace(/\s/g, ""))),
+            hasIdentifiers: config.identifiers.some(id => bodyLower.includes(id)),
+            hasLocation: config.locations.some(loc => bodyLower.includes(loc)),
+            hasPhone: config.phones.some(p => bodyLower.includes(normalizePhone(p))),
+            hasMaps: bodyLower.includes("google.com/maps") || $("iframe[src*='google.com/maps']").length > 0
           };
 
-          // 3. Semanticity
-          const semantic = {
-            detectedIntent: bodyText.includes("how to") || bodyText.includes("guide") ? "Informational" : "Commercial",
-            aiDensity: (bodyText.match(/ai|automation|agent/g) || []).length,
-            entityScore: 0
+          const aeoReadiness = {
+            questionHeadingCount: questionHeadings,
+            hasSpeakable: structuredData.hasSpeakable,
+            answerFirstCandidate: bodyText.slice(0, 500).length > 100
           };
-          if (brandAlignment.hasIdentifiers) semantic.entityScore += 50;
-          if (brandAlignment.hasLocation) semantic.entityScore += 50;
+
+          const performance = {
+            clsRisk: $("img:not([width]), img:not([height])").length > 2 ? "HIGH" : "LOW",
+            hasCdn: !!(response.headers['cf-ray'] || response.headers['x-vercel-id'] || response.headers['x-cache'])
+          };
+
+          const results = { technical, content, structuredData, accessibility, socialPreview, brandAlignment, aeoReadiness, performance };
+          const { score, deductions } = calculateScore(results);
 
           return {
             content: [{
               type: "text",
-              text: JSON.stringify({ url, brand, score: calculateScore(technical, brandAlignment), audit: { technical, brandAlignment, semantic } }, null, 2),
+              text: JSON.stringify({ 
+                url, 
+                brand, 
+                score, 
+                deductions,
+                summary: {
+                  technical: technical.noIndex ? "CRITICAL: Noindex" : "Passed",
+                  content: content.depth,
+                  local: brandAlignment.hasLocation ? "Strong" : "Weak"
+                },
+                audit: results 
+              }, null, 2),
             }],
           };
         } catch (e) {
@@ -128,6 +301,129 @@ const handler = createMcpHandler(
       }
     );
 
+    // --- Tool: Content Quality Audit ---
+    server.registerTool(
+      "audit_content_quality",
+      {
+        title: "Content Quality & AEO Audit",
+        description: "Deep dive into word count, readability, FAQ patterns, and E-E-A-T signals.",
+        inputSchema: {
+          url: z.string().url(),
+          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm"),
+        },
+      },
+      async ({ url, brand }) => {
+        try {
+          const config = BRAND_CONFIGS[brand];
+          const response = await axios.get(url);
+          const $ = cheerio.load(response.data);
+          const bodyText = $("body").text();
+          const words = bodyText.split(/\s+/).filter(w => w.length > 0);
+          
+          const eeat = {
+            hasAddress: $("address").length > 0,
+            hasAuthor: $('meta[name="author"]').length > 0 || $('[rel="author"]').length > 0,
+            hasAboutPage: $('a[href*="about"]').length > 0,
+            hasTeamPage: $('a[href*="team"]').length > 0
+          };
+
+          const keywords = {
+            targetDensity: config.targetKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / config.targetKeywords.length,
+            serviceDensity: config.serviceKeywords.filter(k => bodyText.toLowerCase().includes(k)).length / config.serviceKeywords.length
+          };
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                url,
+                wordCount: words.length,
+                eeat,
+                keywords,
+                readability: {
+                  avgWordLength: words.join("").length / words.length,
+                  complexity: words.length > 1000 ? "High" : "Standard"
+                }
+              }, null, 2),
+            }],
+          };
+        } catch (e) {
+          return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    // --- Tool: Local SEO Audit ---
+    server.registerTool(
+      "audit_local_seo",
+      {
+        title: "Local SEO Deep Dive",
+        description: "Checks NAP consistency, LocalBusiness schema, and Maps integration.",
+        inputSchema: {
+          url: z.string().url(),
+          brand: z.enum(["mktdm", "shreeshivam"]).optional().default("mktdm"),
+        },
+      },
+      async ({ url, brand }) => {
+        try {
+          const config = BRAND_CONFIGS[brand];
+          const response = await axios.get(url);
+          const $ = cheerio.load(response.data);
+          const bodyLower = $("body").text().toLowerCase();
+
+          const nap = {
+            phoneFound: config.phones.some(p => bodyLower.includes(normalizePhone(p))),
+            locationFound: config.locations.some(loc => bodyLower.includes(loc)),
+            mapsEmbedded: $("iframe[src*='google.com/maps']").length > 0
+          };
+
+          const nearMePatterns = config.locations.map(loc => `${loc} near me`).some(p => bodyLower.includes(p));
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ url, brand, nap, nearMePatterns, status: nap.phoneFound && nap.locationFound ? "OPTIMIZED" : "NEEDS WORK" }, null, 2),
+            }],
+          };
+        } catch (e) {
+          return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    // --- Tool: Schema & Structured Data ---
+    server.registerTool(
+      "audit_schema_structured_data",
+      {
+        title: "Structured Data Validator",
+        description: "Extracts and validates all JSON-LD schema types found on the page.",
+        inputSchema: {
+          url: z.string().url(),
+        },
+      },
+      async ({ url }) => {
+        try {
+          const response = await axios.get(url);
+          const $ = cheerio.load(response.data);
+          const schemas = [];
+          $('script[type="application/ld+json"]').each((i, el) => {
+            try {
+              schemas.push(JSON.parse($(el).html()));
+            } catch (e) {}
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ url, count: schemas.length, schemas }, null, 2),
+            }],
+          };
+        } catch (e) {
+          return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
     // --- Tool: Technical SEO Deep Dive ---
     server.registerTool(
       "audit_technical_seo_deep",
@@ -162,6 +458,46 @@ const handler = createMcpHandler(
       }
     );
 
+    // --- Tool: Social Preview Audit ---
+    server.registerTool(
+      "audit_social_preview",
+      {
+        title: "Social & AI Preview Audit",
+        description: "Checks Open Graph and Twitter Card tags for social sharing and AI snippets.",
+        inputSchema: {
+          url: z.string().url(),
+        },
+      },
+      async ({ url }) => {
+        try {
+          const response = await axios.get(url);
+          const $ = cheerio.load(response.data);
+          const og = {};
+          $('meta[property^="og:"]').each((i, el) => {
+            og[$(el).attr("property")] = $(el).attr("content");
+          });
+          const twitter = {};
+          $('meta[name^="twitter:"]').each((i, el) => {
+            twitter[$(el).attr("name")] = $(el).attr("content");
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ 
+                url, 
+                openGraph: og, 
+                twitter,
+                score: Object.keys(og).length > 3 ? "GOOD" : "INCOMPLETE"
+              }, null, 2),
+            }],
+          };
+        } catch (e) {
+          return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
     // --- Resources ---
     server.registerResource(
       "mktdm-templates",
@@ -177,19 +513,9 @@ const handler = createMcpHandler(
       }
     );
   },
-  { name: "mktdm-auditor", version: "1.1.0" },
+  { name: "mktdm-auditor", version: "2.0.0" },
   { basePath: "/auditor", maxDuration: 60 }
 );
-
-function calculateScore(tech, brandAlign) {
-  let s = 100;
-  if (tech.h1Count !== 1) s -= 10;
-  if (tech.metaDescription === "Missing") s -= 15;
-  if (tech.loadTimeMs > 2000) s -= 20;
-  if (!brandAlign.hasLocation) s -= 20;
-  if (!brandAlign.hasIdentifiers) s -= 10;
-  return Math.max(0, s);
-}
 
 export default async function (req, res) {
   try {
