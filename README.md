@@ -4,13 +4,14 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 
 ## 🚀 Active MCP Servers
 
-### 1. Research & Discovery (v2.0.0)
+### 1. Research & Discovery (v2.1.0)
 **Endpoint:** `https://mcp.mktgdime.com/research/mcp`
 - `scrape_competitor_page`: Deep structural analysis (H1-H4), meta data, word count, CTA detection, and local signals.
 - `get_top_pages_intelligence`: Real-time organic traffic and top page analysis via **SEMrush API**.
 - `get_scoped_keyword_insights`: Fetches Volume, KD, and CPC data from **SEMrush**.
 - `get_backlink_opportunities`: Identifies link gaps between you and your competitors.
 - `get_content_gap`: Compares topic coverage (headings) between two URLs to find content opportunities.
+- `research_keyword_opportunity`: **Smart Filter** that cross-checks your seed lists (CSV/Excel) against existing content to avoid duplication.
 
 ### 2. Content Execution & Publishing (v1.1.0)
 **Endpoint:** `https://mcp.mktgdime.com/content/mcp`
@@ -28,27 +29,17 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 
 ---
 
-## 📂 Dynamic Brand Configurations (Privacy-First)
+## 📂 Dynamic Brand & Local Data (Privacy-First)
 
-The Quality Auditor no longer uses hardcoded brand data. Instead, it accepts a `brandConfig` object at runtime. This allows you to keep client data (phones, keywords, private IDs) in **local files** on your machine.
+The MCP Hub is designed to work with your private local data. You can feed your own keyword lists or content inventories into the tools without uploading them to the server.
 
-### How to use with AI Agents (Gemini/Claude):
-1.  **Create a local brand file** (e.g., `shree-shivam.md` or `brands.json`) on your computer.
-2.  **Tell the AI:** "Read my local `shree-shivam.md` file and use those details to audit this URL."
-3.  **AI Logic:** The AI will read your file and pass the details into the `brandConfig` parameter automatically.
+### 1. Brand Configurations
+Keep a local file (e.g., `brands.md`) with your client details (DIPP ID, phones, keywords). Tell the AI: "Read my local `brands.md` and use it for the audit."
 
-**`brandConfig` Structure:**
-```json
-{
-  "name": "Brand Name",
-  "identifiers": ["DIPP ID", "Domain", "Unique Marker"],
-  "locations": ["City", "State"],
-  "phones": ["07225991909"],
-  "locationLabel": "Raipur",
-  "targetKeywords": ["seo", "marketing"],
-  "serviceKeywords": ["audit", "strategy"]
-}
-```
+### 2. Keyword Seed Data (Excel/CSV/JSON)
+Keep your keyword research or content inventory local (e.g., `keywords.csv`). Tell the AI: "Read my `keywords.csv` and use `research_keyword_opportunity` to find new topics I haven't covered in my blog yet."
+
+**How it works:** The AI agent reads your local file and passes the data into the tool parameters on-the-fly. Your data never stays on the server.
 
 ---
 

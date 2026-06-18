@@ -227,6 +227,71 @@ const handler = createMcpHandler(
       }
     );
 
+    // --- Tool: Keyword Opportunity & Seed Data v2.1 ---
+    server.registerTool(
+      "research_keyword_opportunity",
+      {
+        title: "Keyword Opportunity & Smart Filter",
+        description: "Filters seed keywords against existing content and enriches with SEMrush data.",
+        inputSchema: {
+          seedKeywords: z.array(z.string()).optional().describe("List of keywords from your CSV/Excel/Seed sources."),
+          existingContent: z.array(z.string()).optional().describe("List of topics/keywords you already have content for."),
+          topic: z.string().optional().describe("A seed topic to discover new keywords if no seed list is provided."),
+          location: z.string().optional().default("in")
+        },
+      },
+      async ({ seedKeywords = [], existingContent = [], topic, location }) => {
+        const apiKey = await getSecret("semrush");
+        
+        // 1. Filter out duplicates
+        const normalizedExisting = existingContent.map(c => c.toLowerCase().trim());
+        const newOpportunities = seedKeywords.filter(k => {
+          const lowerK = k.toLowerCase().trim();
+          return !normalizedExisting.some(e => e.includes(lowerK) || lowerK.includes(e));
+        });
+
+        const results = {
+          summary: {
+            provided: seedKeywords.length,
+            duplicatesRemoved: seedKeywords.length - newOpportunities.length,
+            readyToAnalyze: newOpportunities.length
+          },
+          opportunities: []
+        };
+
+        // 2. Enrich with SEMrush if possible
+        if (apiKey && newOpportunities.length > 0) {
+          try {
+            const batch = newOpportunities.slice(0, 10).join(","); // Process top 10 for speed
+            const res = await axios.get(`https://api.semrush.com/?type=phrase_this&key=${apiKey}&export_columns=Ph,Nq,Cp,Kd&phrase=${encodeURIComponent(batch)}&database=${location}`);
+            const rows = res.data.split("\n").slice(1).filter(r => r.length > 0);
+            results.opportunities = rows.map(r => {
+              const [ph, vol, cpc, kd] = r.split(";");
+              return { keyword: ph, volume: vol, difficulty: kd + "%", source: "Seed List (Enriched)" };
+            });
+          } catch (e) {
+            results.error = "SEMrush enrichment failed: " + e.message;
+          }
+        } else if (newOpportunities.length > 0) {
+          results.opportunities = newOpportunities.map(k => ({ keyword: k, status: "Ready (Metrics missing - No API Key)", source: "Seed List" }));
+        }
+
+        // 3. Fallback Discovery
+        if (results.opportunities.length === 0 && topic && apiKey) {
+          try {
+            const res = await axios.get(`https://api.semrush.com/?type=phrase_related&key=${apiKey}&export_columns=Ph,Nq,Kd&phrase=${encodeURIComponent(topic)}&database=${location}&display_limit=5`);
+            const rows = res.data.split("\n").slice(1).filter(r => r.length > 0);
+            results.discovery = rows.map(r => {
+              const [ph, vol, kd] = r.split(";");
+              return { keyword: ph, volume: vol, difficulty: kd + "%", source: "Discovery" };
+            });
+          } catch (e) {}
+        }
+
+        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+      }
+    );
+
     // --- Resources ---
     server.registerResource(
       "mktdm-templates",
@@ -248,7 +313,7 @@ const handler = createMcpHandler(
       }
     );
   },
-  { name: "mktdm-research", version: "2.0.0" },
+  { name: "mktdm-research", version: "2.1.0" },
   { basePath: "/research", maxDuration: 60 }
 );
 
