@@ -4,12 +4,15 @@ The central hub for Model Context Protocol (MCP) servers powering **MktgDime.com
 
 ## 🚀 Active MCP Servers
 
-### 1. Research & Discovery
+### 1. Research & Discovery (v2.0.0)
 **Endpoint:** `https://mcp.mktgdime.com/research/mcp`
-- `scrape_competitor_page`: Analyzes on-page SEO and detects local vs. broad intent.
-- `get_scoped_keyword_insights`: Fetches keyword metrics (Volume/KD) with city-specific scoping.
+- `scrape_competitor_page`: Deep structural analysis (H1-H4), meta data, word count, CTA detection, and local signals.
+- `get_top_pages_intelligence`: Real-time organic traffic and top page analysis via **SEMrush API**.
+- `get_scoped_keyword_insights`: Fetches Volume, KD, and CPC data from **SEMrush**.
+- `get_backlink_opportunities`: Identifies link gaps between you and your competitors.
+- `get_content_gap`: Compares topic coverage (headings) between two URLs to find content opportunities.
 
-### 2. Content Execution & Publishing
+### 2. Content Execution & Publishing (v1.1.0)
 **Endpoint:** `https://mcp.mktgdime.com/content/mcp`
 - `format_content_for_cms`: Formats raw text into structured HTML/Markdown for Webflow/WordPress.
 - `generate_local_schema`: Creates JSON-LD for local business optimization.

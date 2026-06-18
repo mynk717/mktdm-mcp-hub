@@ -8,62 +8,152 @@ import { getSecret } from "../shared/secrets.js";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "shared", "MKTDM_Content_Templates.md");
 
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 const handler = createMcpHandler(
   (server) => {
-    // --- Tool: Scrape Competitor Page ---
+    // --- Tool: Scrape Competitor Page v2.0 ---
     server.registerTool(
       "scrape_competitor_page",
       {
-        title: "Scrape Competitor Page",
-        description: "Scrapes a URL for SEO analysis.",
+        title: "Scrape Competitor Page v2.0",
+        description: "Deep structural, schema, and AEO analysis of a competitor page.",
         inputSchema: {
           url: z.string().url().describe("The URL to scrape"),
+          brandConfig: z.object({
+            locations: z.array(z.string()).optional(),
+          }).optional().describe("Local context for scope detection."),
         },
       },
-      async ({ url }) => {
+      async ({ url, brandConfig }) => {
         try {
-          const response = await axios.get(url, { headers: { "User-Agent": "MKTDM-Bot/1.0" } });
+          const startTime = Date.now();
+          const response = await axios.get(url, { 
+            headers: { "User-Agent": BROWSER_UA },
+            timeout: 10000,
+            validateStatus: () => true 
+          });
+
+          if (response.status !== 200) {
+            return { content: [{ type: "text", text: `Scrape Error: Site returned ${response.status}` }], isError: true };
+          }
+
           const $ = cheerio.load(response.data);
-          const h1 = $("h1").first().text().trim();
-          const title = $("title").text().trim();
-          const bodyText = $("body").text().replace(/\s+/g, ' ').trim().slice(0, 3000);
-          const isLocal = ["near me", "in ", "address", "phone", "contact", "location"].some(k => bodyText.toLowerCase().includes(k.toLowerCase()));
-          return { content: [{ type: "text", text: JSON.stringify({ url, title, h1, detectedScope: isLocal ? "local" : "broad", contentSnippet: bodyText }, null, 2) }] };
+          const bodyText = $("body").text();
+          const bodyLower = bodyText.toLowerCase();
+          const headHtml = $("head").html().toLowerCase();
+
+          // 1. Structural Analysis
+          const headings = {
+            h1: $("h1").map((i, el) => $(el).text().trim()).get(),
+            h2: $("h2").map((i, el) => $(el).text().trim()).get(),
+            h3: $("h3").map((i, el) => $(el).text().trim()).get(),
+            counts: { h1: $("h1").length, h2: $("h2").length, h3: $("h3").length, h4: $("h4").length }
+          };
+
+          const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
+
+          // 2. Schema & Meta
+          const schemas = [];
+          $('script[type="application/ld+json"]').each((i, el) => {
+            try { schemas.push(JSON.parse($(el).html())); } catch (e) {}
+          });
+
+          const meta = {
+            title: $("title").text().trim(),
+            description: $('meta[name="description"]').attr("content") || "Missing",
+            canonical: $('link[rel="canonical"]').attr("href"),
+            noIndex: headHtml.includes('content="noindex"') || (response.headers['x-robots-tag'] || "").includes('noindex'),
+            og: {
+              title: $('meta[property="og:title"]').attr("content"),
+              description: $('meta[property="og:description"]').attr("content"),
+              image: $('meta[property="og:image"]').attr("content")
+            }
+          };
+
+          // 3. Links & CTAs
+          const internalLinks = [];
+          $('a[href^="/"], a[href^="' + new URL(url).origin + '"]').slice(0, 10).each((i, el) => {
+            internalLinks.push({ text: $(el).text().trim(), href: $(el).attr("href") });
+          });
+
+          const ctas = [];
+          $("a, button").filter((i, el) => {
+            const txt = $(el).text().toLowerCase();
+            return ["book", "call", "start", "get", "contact", "hire", "quote", "buy"].some(k => txt.includes(k));
+          }).slice(0, 5).each((i, el) => ctas.push($(el).text().trim()));
+
+          // 4. Local Detection
+          const hasLocalSchema = JSON.stringify(schemas).toLowerCase().includes("localbusiness");
+          const hasAddress = $("address").length > 0;
+          const locations = brandConfig?.locations || [];
+          const matchedLocations = locations.filter(loc => bodyLower.includes(loc.toLowerCase()));
+
+          const localScope = {
+            isLocal: hasLocalSchema || hasAddress || matchedLocations.length > 0,
+            signals: { hasLocalSchema, hasAddress, matchedLocations }
+          };
+
+          // 5. AEO & Topic Extraction
+          const questionHeadings = [...headings.h2, ...headings.h3].filter(h => {
+            const l = h.toLowerCase();
+            return ["how", "what", "why", "when", "is", "can"].some(k => l.startsWith(k));
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                url,
+                meta,
+                headings,
+                contentStats: { wordCount, ctas, questionHeadings },
+                structuredData: { count: schemas.length, types: schemas.map(s => s['@type']) },
+                localScope,
+                performance: { loadTimeMs: Date.now() - startTime }
+              }, null, 2),
+            }],
+          };
         } catch (e) {
-          return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+          return { content: [{ type: "text", text: `Scrape Error: ${e.message}` }], isError: true };
         }
       }
     );
 
-    // --- Tool: Top Pages Intelligence ---
+    // --- Tool: Top Pages Intelligence v2.0 ---
     server.registerTool(
       "get_top_pages_intelligence",
       {
-        title: "Top Pages Intelligence",
-        description: "Identifies a competitor's highest-traffic pages (Reverse Engineering).",
+        title: "Top Pages Intelligence v2.0",
+        description: "Identifies a competitor's highest-traffic pages using SEMrush data.",
         inputSchema: {
           domain: z.string().describe("The competitor domain (e.g., example.com)"),
+          limit: z.number().optional().default(10),
         },
       },
-      async ({ domain }) => {
-        return {
-          content: [{
-            type: "text",
-            text: `Reverse Engineering Intelligence for ${domain}:
-1. /services/ai-automation (Est. Traffic: 2,500/mo) - High Intent
-2. /blog/marketing-trends-2026 (Est. Traffic: 1,200/mo) - Awareness
-3. /raipur-digital-agency (Est. Traffic: 800/mo) - Local Intent
-4. /case-studies (Est. Traffic: 450/mo) - Decision Intent`,
-          }],
-        };
+      async ({ domain, limit }) => {
+        const apiKey = await getSecret("semrush");
+        if (!apiKey) return { content: [{ type: "text", text: "Error: SEMrush API key missing." }], isError: true };
+
+        try {
+          const res = await axios.get(`https://api.semrush.com/?type=domain_organic&key=${apiKey}&display_limit=${limit}&export_columns=url,Ur,Tr,At,It&domain=${domain}&database=in`);
+          const rows = res.data.split("\n").slice(1).filter(r => r.length > 0);
+          const pages = rows.map(r => {
+            const [url, rank, traffic, trafficPercent, intent] = r.split(";");
+            return { url, rank, traffic, trafficPercent, intent: intent || "Unknown" };
+          });
+          return { content: [{ type: "text", text: JSON.stringify({ domain, topPages: pages }, null, 2) }] };
+        } catch (e) {
+          return { content: [{ type: "text", text: `API Error: ${e.message}` }], isError: true };
+        }
       }
     );
 
-    // --- Tool: Backlink Opportunity Engine ---
+    // --- Tool: Backlink Opportunity Engine v2.0 ---
     server.registerTool(
       "get_backlink_opportunities",
       {
-        title: "Backlink Opportunity Engine",
+        title: "Backlink Opportunity Engine v2.0",
         description: "Identifies domains linking to competitors but not to you.",
         inputSchema: {
           competitorDomain: z.string(),
@@ -71,37 +161,69 @@ const handler = createMcpHandler(
         },
       },
       async ({ competitorDomain, myDomain }) => {
-        return {
-          content: [{
-            type: "text",
-            text: `Backlink Gap Analysis [${competitorDomain} vs ${myDomain}]:
-- raipur-news-portal.in (DR: 45) - Highly relevant local portal.
-- startup-india-directory.org (DR: 80) - Government association.
-- ai-tech-blog.com (DR: 60) - Niche authority.
-- local-business-raipur.biz (DR: 30) - Neighborhood relevance.`,
-          }],
-        };
+        const apiKey = await getSecret("semrush");
+        if (!apiKey) return { content: [{ type: "text", text: "Error: SEMrush API key missing." }], isError: true };
+
+        try {
+          const res = await axios.get(`https://api.semrush.com/analytics/v1/?key=${apiKey}&type=backlinks_overview&target=${competitorDomain}&target_type=domain`);
+          return { content: [{ type: "text", text: JSON.stringify({ competitorDomain, myDomain, apiResponse: res.data }, null, 2) }] };
+        } catch (e) {
+          return { content: [{ type: "text", text: `API Error: ${e.message}` }], isError: true };
+        }
       }
     );
 
+    // --- Tool: Keyword Insights v2.0 ---
     server.registerTool(
       "get_scoped_keyword_insights",
       {
-        title: "Get Scoped Keyword Insights",
-        description: "Fetch keyword metrics (local vs broad).",
+        title: "Keyword Insights v2.0",
+        description: "Fetch real keyword metrics (Volume/KD/CPC) from SEMrush.",
         inputSchema: {
           keyword: z.string().describe("The keyword to analyze"),
-          scope: z.enum(["local", "broad"]).describe("Target scope"),
-          location: z.string().optional().describe("Location for local scope"),
+          location: z.string().optional().default("in").describe("Region (e.g., 'in', 'us')"),
         },
       },
-      async ({ keyword, scope, location }) => {
-        const apiKey = await getSecret("semrush"); // Fetches from Redis
-        const volumeBase = scope === "local" ? 500 : 15000;
-        const kd = scope === "local" ? "Low/Medium" : "High";
-        return {
-          content: [{ type: "text", text: `Analysis for '${keyword}' [Scope: ${scope}${location ? ` @ ${location}` : ''}]:\n- Monthly Volume: ~${volumeBase}\n- Competition (KD): ${kd}\n- API Key Status: ${apiKey ? "Active" : "Missing"}` }],
-        };
+      async ({ keyword, location }) => {
+        const apiKey = await getSecret("semrush");
+        if (!apiKey) return { content: [{ type: "text", text: "Error: SEMrush API key missing." }], isError: true };
+
+        try {
+          const res = await axios.get(`https://api.semrush.com/?type=phrase_this&key=${apiKey}&export_columns=Ph,Nq,Cp,Co,Kd&phrase=${encodeURIComponent(keyword)}&database=${location}`);
+          const data = res.data.split("\n")[1];
+          if (!data) return { content: [{ type: "text", text: "No data found." }] };
+          const [phrase, volume, cpc, competition, kd] = data.split(";");
+          return { content: [{ type: "text", text: JSON.stringify({ keyword: phrase, metrics: { volume, cpc, competition, difficulty: kd + "%" } }, null, 2) }] };
+        } catch (e) {
+          return { content: [{ type: "text", text: `API Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    // --- Tool: Content Gap Analyzer (NEW) ---
+    server.registerTool(
+      "get_content_gap",
+      {
+        title: "Content Gap Analyzer",
+        description: "Compares topic coverage between two URLs.",
+        inputSchema: {
+          myUrl: z.string().url(),
+          competitorUrl: z.string().url(),
+        },
+      },
+      async ({ myUrl, competitorUrl }) => {
+        try {
+          const fetchTopics = async (u) => {
+            const r = await axios.get(u, { headers: { "User-Agent": BROWSER_UA }, timeout: 8000 });
+            const s = cheerio.load(r.data);
+            return s("h1, h2, h3").map((i, el) => s(el).text().trim().toLowerCase()).get();
+          };
+          const [myTopics, compTopics] = await Promise.all([fetchTopics(myUrl), fetchTopics(competitorUrl)]);
+          const missing = compTopics.filter(t => !myTopics.some(m => m.includes(t) || t.includes(m)));
+          return { content: [{ type: "text", text: JSON.stringify({ myUrl, competitorUrl, missingTopics: [...new Set(missing)].slice(0, 15) }, null, 2) }] };
+        } catch (e) {
+          return { content: [{ type: "text", text: `Gap Error: ${e.message}` }], isError: true };
+        }
       }
     );
 
@@ -126,7 +248,7 @@ const handler = createMcpHandler(
       }
     );
   },
-  { name: "mktdm-research", version: "1.1.0" },
+  { name: "mktdm-research", version: "2.0.0" },
   { basePath: "/research", maxDuration: 60 }
 );
 
